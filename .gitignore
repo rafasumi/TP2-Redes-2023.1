@@ -1,6 +1,6 @@
 *.o
 *.txt
 .clang-format
-client
+user
 server
 .vscode/
