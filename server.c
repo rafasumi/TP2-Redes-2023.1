@@ -174,7 +174,7 @@ void* client_thread(void* args) {
       ret_msg.id_sender = new_id;
       ret_msg.id_receiver = NULL_ID;
       sprintf(ret_msg.message, "User %d joined the group", new_id);
-      broadcast(&ret_msg, -1);
+      broadcast(&ret_msg, NULL_ID);
 
       memset(ret_msg.message, 0, strlen(ret_msg.message));
       get_user_list(ret_msg.message);
@@ -193,9 +193,8 @@ void* client_thread(void* args) {
       }
     } else if (msg.id_msg == REQ_REM) {
       pthread_mutex_lock(&mutex); // LOCK
-      int found = active_sockets[msg.id_sender] != -1;
 
-      if (!found) { 
+      if (active_sockets[msg.id_sender] == -1) {
         error_msg(cdata->client_sock, msg.id_sender, 2);
       } else {
         ok_msg(cdata->client_sock, msg.id_sender);
@@ -204,8 +203,7 @@ void* client_thread(void* args) {
 
         printf("User %d removed\n", msg.id_sender);
 
-        // HOW TO DO NONBLOCKING recv of message
-        // broadcast(&msg);
+        broadcast(&msg, NULL_ID);
       }
 
       pthread_mutex_unlock(&mutex); // UNLOCK

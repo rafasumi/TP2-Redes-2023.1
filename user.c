@@ -64,6 +64,15 @@ void set_user_list(int* user_list, char* message) {
   }
 }
 
+void list_users(int* user_list, int my_id) {
+  for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (user_list[i] != 0 && i != my_id) {
+      printf("%d ", i);
+    }
+  }
+  printf("\n");
+}
+
 void req_add(int socket, msg_t* msg) {
   memset(msg->message, 0, BUFFER_SIZE);
   msg->id_msg = REQ_ADD;
@@ -103,7 +112,7 @@ void res_list(int socket, int* user_list) {
   set_user_list(user_list, msg.message);
 }
 
-int handle_input(char* input, int socket, int my_id) {
+int handle_input(char* input, int socket, int my_id, int* user_list) {
   fgets(input, BUFFER_SIZE, stdin);
 
   // Remove \n do input lido pelo fgets
@@ -125,9 +134,22 @@ int handle_input(char* input, int socket, int my_id) {
       log_exit("send");
     }
 
+    memset(buffer, 0, strlen(buffer));
+    if (recv_msg(socket, buffer) <= 0) {
+      log_exit("recv");
+    }
+
+    if (decode(&msg, buffer) == 0) {
+      parse_error();
+    }
+
+    if (msg.id_msg == OK || msg.id_msg == ERROR) {
+      printf("%s\n", msg.message);
+    }
+
     return 1;
   } else if (strcmp(input, "list users") == 0) {
-    // ...
+    list_users(user_list, my_id);
   }
   // A função strstr encontra a primeira ocorrência de um padrão em uma
   // string. Caso o padrão "send to " for encontrado, então o resto da string
@@ -208,7 +230,7 @@ int main(int argc, const char* argv[]) {
   fd_set file_descriptors;
   int max_fd = (sock > STDIN_FILENO) ? sock : STDIN_FILENO;
 
-  char input[BUFFER_SIZE];
+  char buffer[BUFFER_SIZE];
   while (1) {
     FD_ZERO(&file_descriptors);
     FD_SET(STDIN_FILENO, &file_descriptors);
@@ -222,12 +244,25 @@ int main(int argc, const char* argv[]) {
       log_exit("select");
     }
 
+    memset(buffer, 0, BUFFER_SIZE);
     if (FD_ISSET(STDIN_FILENO, &file_descriptors)) {
-      memset(input, 0, BUFFER_SIZE);
-      if (handle_input(input, sock, my_id) == 1)
+      if (handle_input(buffer, sock, my_id, user_list) == 1)
         break;
-    } else if (FD_ISSET(sock, &file_descriptors)) {
-      // HANDLE RECEIVED MESSAGES
+    } else if (FD_ISSET(sock, &file_descriptors)) {      
+      if (recv_msg(sock, buffer) > 0) {
+        msg_t msg;
+        if (decode(&msg, buffer) == 0) {
+          parse_error();
+        }
+
+        if (msg.id_msg == MSG) {
+          printf("%s\n", msg.message);
+          user_list[msg.id_sender] = 1;
+        } else if (msg.id_msg == REQ_REM) {
+          printf("User %d left the group!\n", msg.id_sender);
+          user_list[msg.id_sender] = 0;
+        }
+      }
     }
   }
 
