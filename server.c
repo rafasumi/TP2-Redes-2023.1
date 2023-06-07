@@ -11,10 +11,10 @@
 // Variáveis globais
 int active_sockets[MAX_CLIENTS];
 unsigned int user_count = 0;
-pthread_mutex_t mutex;
 
 typedef struct thread_args {
   int client_sock;
+  pthread_mutex_t* mutex;
 } thread_args;
 
 // Retirado das aulas do professor Ítalo.
@@ -95,10 +95,7 @@ void broadcast(msg_t* msg, int skip_id) {
 }
 
 void error_msg(int socket, int id_receiver, int error_code) {
-  msg_t msg;
-  msg.id_msg = ERROR;
-  msg.id_sender = NULL_ID;
-  msg.id_receiver = id_receiver;
+  msg_t msg = {.id_msg = ERROR, .id_sender = NULL_ID, .id_receiver = id_receiver};
 
   memset(msg.message, 0, BUFFER_SIZE);
   switch (error_code) {
@@ -123,11 +120,7 @@ void error_msg(int socket, int id_receiver, int error_code) {
 }
 
 void ok_msg(int socket, int id_receiver) {
-  msg_t msg;
-  msg.id_msg = OK;
-  msg.id_sender = NULL_ID;
-  msg.id_receiver = id_receiver;
-
+  msg_t msg = {.id_msg = OK, .id_sender = NULL_ID, .id_receiver = id_receiver};
   memset(msg.message, 0, BUFFER_SIZE);
   strcpy(msg.message, "Removed Successfully");
 
@@ -159,7 +152,7 @@ void* client_thread(void* args) {
       msg_t ret_msg;
       memset(ret_msg.message, 0, BUFFER_SIZE);
 
-      pthread_mutex_lock(&mutex); // LOCK
+      pthread_mutex_lock(cdata->mutex); // LOCK
 
       if (user_count == 15) {
         // id_receiver precisa ser nulo nesse caso, pois o usuário não possui um ID
@@ -179,7 +172,7 @@ void* client_thread(void* args) {
       memset(ret_msg.message, 0, strlen(ret_msg.message));
       get_user_list(ret_msg.message);
 
-      pthread_mutex_unlock(&mutex); // UNLOCK
+      pthread_mutex_unlock(cdata->mutex); // UNLOCK
 
       ret_msg.id_msg = RES_LIST;
       ret_msg.id_sender = NULL_ID;
@@ -192,7 +185,7 @@ void* client_thread(void* args) {
         log_exit("send");
       }
     } else if (msg.id_msg == REQ_REM) {
-      pthread_mutex_lock(&mutex); // LOCK
+      pthread_mutex_lock(cdata->mutex); // LOCK
 
       if (active_sockets[msg.id_sender] == -1) {
         error_msg(cdata->client_sock, msg.id_sender, 2);
@@ -206,7 +199,7 @@ void* client_thread(void* args) {
         broadcast(&msg, NULL_ID);
       }
 
-      pthread_mutex_unlock(&mutex); // UNLOCK
+      pthread_mutex_unlock(cdata->mutex); // UNLOCK
 
       break;
     } else {
@@ -252,6 +245,7 @@ int main(int argc, const char* argv[]) {
     log_exit("listen");
   }
 
+  pthread_mutex_t mutex;
   pthread_mutex_init(&mutex, NULL);
   memset(active_sockets, -1, sizeof(active_sockets));
   while (1) {
@@ -266,6 +260,7 @@ int main(int argc, const char* argv[]) {
 
     thread_args* cdata = (thread_args*)malloc(sizeof(thread_args));
     cdata->client_sock = client_sock;
+    cdata->mutex = &mutex;
 
     pthread_t thread_id;
     pthread_create(&thread_id, NULL, client_thread, (void*)cdata);

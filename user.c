@@ -1,14 +1,26 @@
 #include "common.h"
 #include <arpa/inet.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/select.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+typedef struct input_thread_args {
+  int socket;
+  int my_id;
+  int* user_list;
+  pthread_mutex_t* mutex;
+} input_thread_args;
+
+typedef struct recv_thread_args {
+  int socket;
+  int* user_list;
+  pthread_mutex_t* mutex;
+} recv_thread_args;
 
 // Retirado das aulas do professor Ítalo.
 void usage(const char* bin) {
@@ -112,30 +124,82 @@ void res_list(int socket, int* user_list) {
   set_user_list(user_list, msg.message);
 }
 
-int handle_input(char* input, int socket, int my_id, int* user_list) {
-  fgets(input, BUFFER_SIZE, stdin);
+void* handle_input(void* args) {
+  input_thread_args* input_args = (input_thread_args*)args;
 
-  // Remove \n do input lido pelo fgets
-  input[strcspn(input, "\n")] = '\0';
+  while (1) {
+    char input[BUFFER_SIZE];
+    fgets(input, BUFFER_SIZE, stdin);
 
-  char* ptr;
-  if (strcmp(input, "close connection") == 0) {
-    msg_t msg;
-    msg.id_msg = REQ_REM;
-    msg.id_sender = my_id;
-    msg.id_receiver = NULL_ID;
-    memset(msg.message, 0, BUFFER_SIZE);
-    strcpy(msg.message, "REQ_REM");
+    // Remove \n do input lido pelo fgets
+    input[strcspn(input, "\n")] = '\0';
 
-    char buffer[BUFFER_SIZE];
-    encode(&msg, buffer);
+    char* ptr;
+    if (strcmp(input, "close connection") == 0) {
+      msg_t msg = {.id_msg = REQ_REM, .id_sender = input_args->my_id, .id_receiver = NULL_ID};
+      memset(msg.message, 0, BUFFER_SIZE);
+      strcpy(msg.message, "REQ_REM");
 
-    if (send_msg(socket, buffer) != 0) {
-      log_exit("send");
+      char buffer[BUFFER_SIZE];
+      encode(&msg, buffer);
+
+      // pthread_mutex_lock(input_args->mutex); // LOCK
+      if (send_msg(input_args->socket, buffer) != 0) {
+        log_exit("send");
+      }
+      // pthread_mutex_unlock(input_args->mutex); // UNLOCK
+
+      break;
+    } else if (strcmp(input, "list users") == 0) {
+      pthread_mutex_lock(input_args->mutex); // LOCK
+      list_users(input_args->user_list, input_args->my_id);
+      pthread_mutex_unlock(input_args->mutex); // UNLOCK
     }
+    // A função strstr encontra a primeira ocorrência de um padrão em uma
+    // string. Caso o padrão "send to " for encontrado, então o resto da string
+    // provavelmente é um comando para mensagem privada.
+    else if ((ptr = strstr(input, "send to ")) != NULL) {
+      ptr += strlen("send to ");
 
-    memset(buffer, 0, strlen(buffer));
-    if (recv_msg(socket, buffer) <= 0) {
+      // Se não houver nada após "send to ", trata como um comando inválido
+      if (*ptr == '\0')
+        continue;
+
+      char* id_receiver;
+      char* message;
+      id_receiver = strtok(ptr, " ");
+      message = strtok(NULL, " ");
+
+      printf("%s %s\n", id_receiver, message);
+    }
+    // Nesse caso, se o padrão "send all " for encontrado, então o resto da
+    // string provavelmente é um comando para mensagem de broadcast.
+    else if ((ptr = strstr(input, "send all ")) != NULL) {
+      ptr += strlen("send all ");
+
+      // Se não houver nada após "send to ", trata como um comando inválido
+      if (*ptr == '\0')
+        continue;
+
+      printf("%s\n", ptr);
+    } else {
+      // Se o input passado não cai em nenhum dos casos anteriores, então é um
+      // comando desconhecido.
+      continue;
+    }
+  }
+
+  pthread_exit(NULL);
+}
+
+void* handle_recv(void* args) {
+  recv_thread_args* recv_args = (recv_thread_args*)args;
+
+  char buffer[BUFFER_SIZE];
+  msg_t msg;
+  while (1) {
+    memset(buffer, 0, BUFFER_SIZE);
+    if (recv_msg(recv_args->socket, buffer) <= 0) {
       log_exit("recv");
     }
 
@@ -143,47 +207,27 @@ int handle_input(char* input, int socket, int my_id, int* user_list) {
       parse_error();
     }
 
-    if (msg.id_msg == OK || msg.id_msg == ERROR) {
+    if (msg.id_msg == REQ_REM) {
+      printf("User %d left the group!\n", msg.id_sender);
+
+      pthread_mutex_lock(recv_args->mutex);
+      recv_args->user_list[msg.id_sender] = 0;
+      pthread_mutex_unlock(recv_args->mutex);
+    } else if (msg.id_msg == MSG) {
+      printf("%s\n", msg.message);
+
+      pthread_mutex_lock(recv_args->mutex);
+      recv_args->user_list[msg.id_sender] = 1;
+      pthread_mutex_unlock(recv_args->mutex);
+    } else if (msg.id_msg == OK) {
+      printf("%s\n", msg.message);
+      break;
+    } else if (msg.id_msg == ERROR) {
       printf("%s\n", msg.message);
     }
-
-    return 1;
-  } else if (strcmp(input, "list users") == 0) {
-    list_users(user_list, my_id);
-  }
-  // A função strstr encontra a primeira ocorrência de um padrão em uma
-  // string. Caso o padrão "send to " for encontrado, então o resto da string
-  // provavelmente é um comando para mensagem privada.
-  else if ((ptr = strstr(input, "send to ")) != NULL) {
-    ptr += strlen("send to ");
-
-    // Se não houver nada após "send to ", trata como um comando inválido
-    if (*ptr == '\0')
-      return 0;
-
-    char* id_receiver;
-    char* message;
-    id_receiver = strtok(ptr, " ");
-    message = strtok(NULL, " ");
-
-    printf("%s %s\n", id_receiver, message);
-  }
-  // Nesse caso, se o padrão "send all " for encontrado, então o resto da
-  // string provavelmente é um comando para mensagem de broadcast.
-  else if ((ptr = strstr(input, "send all ")) != NULL) {
-    ptr += strlen("send all ");
-
-    // Se não houver nada após "send to ", trata como um comando inválido
-    if (*ptr == '\0')
-      return 0;
-
-    printf("%s\n", ptr);
   }
 
-  // Se o input passado não cai em nenhum dos casos anteriores, então é um
-  // comando desconhecido.
-
-  return 0;
+  pthread_exit(NULL);
 }
 
 int main(int argc, const char* argv[]) {
@@ -221,51 +265,29 @@ int main(int argc, const char* argv[]) {
   if (msg.id_msg == ERROR) {
     close(sock);
     exit(EXIT_FAILURE);
-  } else {
+  } else if (msg.id_msg == MSG) {
     my_id = msg.id_sender;
   }
 
   res_list(sock, user_list);
 
-  fd_set file_descriptors;
-  int max_fd = (sock > STDIN_FILENO) ? sock : STDIN_FILENO;
+  pthread_mutex_t mutex;
+  pthread_mutex_init(&mutex, NULL);
 
-  char buffer[BUFFER_SIZE];
-  while (1) {
-    FD_ZERO(&file_descriptors);
-    FD_SET(STDIN_FILENO, &file_descriptors);
-    FD_SET(sock, &file_descriptors);
+  pthread_t input_thread;
+  input_thread_args input_args = {
+      .socket = sock, .my_id = my_id, .user_list = user_list, .mutex = &mutex};
 
-    struct timeval timeout;
-    timeout.tv_sec = 5;
-    timeout.tv_usec = 0;
+  pthread_t recv_thread;
+  recv_thread_args recv_args = {.socket = sock, .user_list = user_list, .mutex = &mutex};
 
-    if (select(max_fd + 1, &file_descriptors, NULL, NULL, &timeout) == -1) {
-      log_exit("select");
-    }
+  pthread_create(&input_thread, NULL, handle_input, &input_args);
+  pthread_create(&recv_thread, NULL, handle_recv, &recv_args);
 
-    memset(buffer, 0, BUFFER_SIZE);
-    if (FD_ISSET(STDIN_FILENO, &file_descriptors)) {
-      if (handle_input(buffer, sock, my_id, user_list) == 1)
-        break;
-    } else if (FD_ISSET(sock, &file_descriptors)) {      
-      if (recv_msg(sock, buffer) > 0) {
-        msg_t msg;
-        if (decode(&msg, buffer) == 0) {
-          parse_error();
-        }
+  pthread_join(input_thread, NULL);
+  pthread_join(recv_thread, NULL);
 
-        if (msg.id_msg == MSG) {
-          printf("%s\n", msg.message);
-          user_list[msg.id_sender] = 1;
-        } else if (msg.id_msg == REQ_REM) {
-          printf("User %d left the group!\n", msg.id_sender);
-          user_list[msg.id_sender] = 0;
-        }
-      }
-    }
-  }
-
+  pthread_mutex_destroy(&mutex);
   close(sock);
 
   exit(EXIT_SUCCESS);
