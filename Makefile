@@ -12,7 +12,7 @@ server: $(OBJ) $(SERVER)
 	$(CC) $(CCFLAGS) -lpthread $(SERVER) $(OBJ) -o server
 
 user: $(OBJ) $(USER)
-	$(CC) $(CCFLAGS) $(USER) $(OBJ) -o user
+	$(CC) $(CCFLAGS) -lpthread $(USER) $(OBJ) -o user
 
 $(OBJ): $(COMMON)
 	$(CC) $(CCFLAGS) -c $(COMMON)
