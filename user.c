@@ -7,20 +7,15 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
-typedef struct input_thread_args {
+typedef struct thread_args {
   int socket;
   int my_id;
   int* user_list;
   pthread_mutex_t* mutex;
-} input_thread_args;
-
-typedef struct recv_thread_args {
-  int socket;
-  int* user_list;
-  pthread_mutex_t* mutex;
-} recv_thread_args;
+} thread_args;
 
 // Retirado das aulas do professor Ítalo.
 void usage(const char* bin) {
@@ -76,7 +71,7 @@ void set_user_list(int* user_list, char* message) {
   }
 }
 
-void list_users(int* user_list, int my_id) {
+void list_users(const int* user_list, int my_id) {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (user_list[i] != 0 && i != my_id) {
       printf("%d ", i);
@@ -93,6 +88,7 @@ void req_add(int socket, msg_t* msg) {
   strcpy(msg->message, "REQ_ADD");
 
   char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
   encode(msg, buffer);
 
   if (send_msg(socket, buffer) != 0) {
@@ -124,8 +120,14 @@ void res_list(int socket, int* user_list) {
   set_user_list(user_list, msg.message);
 }
 
+void set_time_str(char* time_str) {
+  time_t now = time(NULL);
+  struct tm* local_time = localtime(&now);
+  strftime(time_str, sizeof(time_str) + 1, "[%H:%M]", local_time);
+}
+
 void* handle_input(void* args) {
-  input_thread_args* input_args = (input_thread_args*)args;
+  thread_args* input_args = (thread_args*)args;
 
   while (1) {
     char input[BUFFER_SIZE];
@@ -141,13 +143,12 @@ void* handle_input(void* args) {
       strcpy(msg.message, "REQ_REM");
 
       char buffer[BUFFER_SIZE];
+      memset(buffer, 0, BUFFER_SIZE);
       encode(&msg, buffer);
 
-      // pthread_mutex_lock(input_args->mutex); // LOCK
       if (send_msg(input_args->socket, buffer) != 0) {
         log_exit("send");
       }
-      // pthread_mutex_unlock(input_args->mutex); // UNLOCK
 
       break;
     } else if (strcmp(input, "list users") == 0) {
@@ -165,23 +166,58 @@ void* handle_input(void* args) {
       if (*ptr == '\0')
         continue;
 
-      char* id_receiver;
-      char* message;
-      id_receiver = strtok(ptr, " ");
-      message = strtok(NULL, " ");
+      // Obtém o resto dos parâmetros da string de entrada
+      char id_receiver[BUFFER_SIZE];
+      memset(id_receiver, 0, BUFFER_SIZE);
+      char message[BUFFER_SIZE];
+      memset(message, 0, BUFFER_SIZE);
+      sscanf(ptr, "%s %[^\n]", id_receiver, message);
 
-      printf("%s %s\n", id_receiver, message);
+      // Trata o caso em que não há nada após o ID do destinatário
+      if (message[0] == '\0')
+        continue;
+
+      // Não envia mensagem para o servidor caso ID não seja um número válido ou
+      // se for igual a -1 (NULL_ID). Isso é feito para evitar ambiguidades no
+      // servidor.
+      if (!is_number(id_receiver, strlen(id_receiver)) || strcmp(id_receiver, "-1") == 0) {
+        printf("Receiver not found\n");
+        continue;
+      }
+
+      msg_t msg = {
+          .id_msg = MSG, .id_sender = input_args->my_id, .id_receiver = atoi(id_receiver)};
+      memset(msg.message, 0, BUFFER_SIZE);
+      strcpy(msg.message, message);
+
+      char buffer[BUFFER_SIZE];
+      memset(buffer, 0, BUFFER_SIZE);
+      encode(&msg, buffer);
+
+      if (send_msg(input_args->socket, buffer) != 0) {
+        log_exit("send");
+      }
     }
     // Nesse caso, se o padrão "send all " for encontrado, então o resto da
     // string provavelmente é um comando para mensagem de broadcast.
     else if ((ptr = strstr(input, "send all ")) != NULL) {
       ptr += strlen("send all ");
 
-      // Se não houver nada após "send to ", trata como um comando inválido
+      // Se não houver nada após "send all ", trata como um comando inválido
       if (*ptr == '\0')
         continue;
 
-      printf("%s\n", ptr);
+      msg_t msg = {.id_msg = MSG, .id_sender = input_args->my_id, .id_receiver = NULL_ID};
+      memset(msg.message, 0, BUFFER_SIZE);
+      strcpy(msg.message, ptr);
+
+      char buffer[BUFFER_SIZE];
+      memset(buffer, 0, BUFFER_SIZE);
+      encode(&msg, buffer);
+
+      if (send_msg(input_args->socket, buffer) != 0) {
+        log_exit("send");
+      }
     } else {
       // Se o input passado não cai em nenhum dos casos anteriores, então é um
       // comando desconhecido.
@@ -193,7 +229,7 @@ void* handle_input(void* args) {
 }
 
 void* handle_recv(void* args) {
-  recv_thread_args* recv_args = (recv_thread_args*)args;
+  thread_args* recv_args = (thread_args*)args;
 
   char buffer[BUFFER_SIZE];
   msg_t msg;
@@ -214,7 +250,22 @@ void* handle_recv(void* args) {
       recv_args->user_list[msg.id_sender] = 0;
       pthread_mutex_unlock(recv_args->mutex);
     } else if (msg.id_msg == MSG) {
-      printf("%s\n", msg.message);
+      char time_str[7];
+      set_time_str(time_str);
+
+      if (msg.id_receiver != NULL_ID) {
+        printf("P ");
+      }
+
+      printf("%s", time_str);
+
+      if (msg.id_sender != recv_args->my_id) {
+        printf(" %d:", msg.id_sender);
+      } else if (msg.id_receiver != NULL_ID) {
+        printf(" -> %d:", msg.id_receiver);
+      }
+
+      printf(" %s\n", msg.message);
 
       pthread_mutex_lock(recv_args->mutex);
       recv_args->user_list[msg.id_sender] = 1;
@@ -275,11 +326,12 @@ int main(int argc, const char* argv[]) {
   pthread_mutex_init(&mutex, NULL);
 
   pthread_t input_thread;
-  input_thread_args input_args = {
+  thread_args input_args = {
       .socket = sock, .my_id = my_id, .user_list = user_list, .mutex = &mutex};
 
   pthread_t recv_thread;
-  recv_thread_args recv_args = {.socket = sock, .user_list = user_list, .mutex = &mutex};
+  thread_args recv_args = {
+      .socket = sock, .my_id = my_id, .user_list = user_list, .mutex = &mutex};
 
   pthread_create(&input_thread, NULL, handle_input, &input_args);
   pthread_create(&recv_thread, NULL, handle_recv, &recv_args);

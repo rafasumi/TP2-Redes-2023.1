@@ -81,6 +81,7 @@ void get_user_list(char* buffer) {
 
 void broadcast(msg_t* msg, int skip_id) {
   char buffer[BUFFER_SIZE];
+  memset(buffer, 0, BUFFER_SIZE);
   encode(msg, buffer);
 
   for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -141,7 +142,7 @@ void* client_thread(void* args) {
   while (1) {
     memset(buffer, 0, BUFFER_SIZE);
     if (recv_msg(cdata->client_sock, buffer) <= 0) {
-      break;
+      log_exit("recv");
     }
 
     if (decode(&msg, buffer) == 0) {
@@ -155,6 +156,7 @@ void* client_thread(void* args) {
       pthread_mutex_lock(cdata->mutex); // LOCK
 
       if (user_count == 15) {
+        pthread_mutex_unlock(cdata->mutex); // UNLOCK
         // id_receiver precisa ser nulo nesse caso, pois o usuário não possui um ID
         error_msg(cdata->client_sock, NULL_ID, 1);
         break;
@@ -202,6 +204,51 @@ void* client_thread(void* args) {
       pthread_mutex_unlock(cdata->mutex); // UNLOCK
 
       break;
+    } else if (msg.id_msg == MSG) {
+      if (msg.id_receiver == NULL_ID) { // Mensagem pública
+        // Faz o broadcast da mensagem
+        pthread_mutex_lock(cdata->mutex);
+        broadcast(&msg, msg.id_sender);
+        pthread_mutex_unlock(cdata->mutex);
+
+        // Altera a mensagem para ser enviada para o remetente
+        char temp[BUFFER_SIZE] = "-> all ";
+        strcat(temp, msg.message);
+        strcpy(msg.message, temp);
+
+        memset(buffer, 0, strlen(buffer));
+        encode(&msg, buffer);
+
+        // Envia a mensagem alterada para o usuário remetente
+        if (send_msg(cdata->client_sock, buffer) != 0) {
+          log_exit("recv");
+        }
+      } else { // Mensagem privada
+        pthread_mutex_lock(cdata->mutex); // LOCK
+
+        // Verifica se o ID do destinatário existe
+        if (msg.id_receiver >= MAX_CLIENTS || msg.id_receiver < 0 || active_sockets[msg.id_receiver] == -1) {
+          printf("User %d not found\n", msg.id_receiver);
+          error_msg(cdata->client_sock, msg.id_sender, 3);
+        } else {
+          memset(buffer, 0, strlen(buffer));
+          encode(&msg, buffer);
+
+          // Envia a mensagem novamente para o remetente como forma de confirmação
+          if (send_msg(cdata->client_sock, buffer) != 0) {
+            pthread_mutex_unlock(cdata->mutex); // UNLOCK
+            log_exit("recv");
+          }
+
+          // Envia a mensagem para o destinatário
+          if (send_msg(active_sockets[msg.id_receiver], buffer) != 0) {
+            pthread_mutex_unlock(cdata->mutex); // UNLOCK
+            log_exit("recv");
+          }
+        }
+
+        pthread_mutex_unlock(cdata->mutex); // UNLOCK
+      }
     } else {
       eprintf("Unknown message ID.");
       exit(EXIT_FAILURE);

@@ -13,7 +13,11 @@ int encode(const msg_t* msg, char* outBuf) {
 }
 
 int is_number(const char* str, size_t len) {
-  for (int i = 0; i < len; i++) {
+  if (!isdigit(str[0]) && (str[0] != '-' || len == 1)) {
+    return 0;
+  }
+
+  for (int i = 1; i < len; i++) {
     if (!isdigit(str[i]))
       return 0;
   }
@@ -25,6 +29,7 @@ int decode(msg_t* msg, char* inBuf) {
   char* token;
   char delim[1] = {SEPARATOR};
 
+  // ID da mensagem
   token = strtok(inBuf, delim);
   if (token == NULL)
     return 0;
@@ -33,6 +38,7 @@ int decode(msg_t* msg, char* inBuf) {
     return 0;
   msg->id_msg = atoi(token);
 
+  // ID do remetente
   token = strtok(NULL, delim);
   if (token == NULL)
     return 0;
@@ -41,6 +47,7 @@ int decode(msg_t* msg, char* inBuf) {
     return 0;
   msg->id_receiver = atoi(token);
 
+  // ID do destinatário
   token = strtok(NULL, delim);
   if (token == NULL)
     return 0;
@@ -49,6 +56,7 @@ int decode(msg_t* msg, char* inBuf) {
     return 0;
   msg->id_sender = atoi(token);
 
+  // Mensagem
   token = strtok(NULL, delim);
   if (token == NULL)
     return 0;
@@ -59,7 +67,7 @@ int decode(msg_t* msg, char* inBuf) {
   return 1;
 }
 
-int send_msg(int socket, char* buffer) {
+int send_msg(int socket, const char* buffer) {
   size_t buffer_len = strlen(buffer);
   uint16_t msg_size = htons(buffer_len);
 
@@ -120,6 +128,6 @@ void log_exit(const char* msg) {
 }
 
 void parse_error() {
-  eprintf("Error while parsing incoming message.");
+  eprintf("Error while parsing incoming message.\n");
   exit(EXIT_FAILURE);
 }
