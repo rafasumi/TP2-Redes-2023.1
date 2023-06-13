@@ -14,6 +14,8 @@ typedef struct thread_args {
   int socket;
   int my_id;
   int* user_list;
+  int* confirmed;
+  pthread_cond_t* confirmation_arrived;
   pthread_mutex_t* mutex;
 } thread_args;
 
@@ -197,6 +199,16 @@ void* handle_input(void* args) {
       if (send_msg(input_args->socket, buffer) != 0) {
         log_exit("send");
       }
+
+      pthread_mutex_lock(input_args->mutex);
+      *input_args->confirmed = 0;
+      pthread_cond_wait(input_args->confirmation_arrived, input_args->mutex);
+      if (*input_args->confirmed) {
+        char time_str[7];
+        set_time_str(time_str);
+        printf("P %s -> %d: %s\n", time_str, msg.id_receiver, msg.message);
+      }
+      pthread_mutex_unlock(input_args->mutex);
     }
     // Nesse caso, se o padrão "send all " for encontrado, então o resto da
     // string provavelmente é um comando para mensagem de broadcast.
@@ -259,11 +271,8 @@ void* handle_recv(void* args) {
 
       printf("%s", time_str);
 
-      if (msg.id_sender != recv_args->my_id) {
+      if (msg.id_sender != recv_args->my_id)
         printf(" %d:", msg.id_sender);
-      } else if (msg.id_receiver != NULL_ID) {
-        printf(" -> %d:", msg.id_receiver);
-      }
 
       printf(" %s\n", msg.message);
 
@@ -271,10 +280,23 @@ void* handle_recv(void* args) {
       recv_args->user_list[msg.id_sender] = 1;
       pthread_mutex_unlock(recv_args->mutex);
     } else if (msg.id_msg == OK) {
-      printf("%s\n", msg.message);
-      break;
+      if (strcmp(msg.message, "Removed Successfully") == 0) {
+        printf("%s\n", msg.message);
+        break;
+      } else {
+        pthread_mutex_lock(recv_args->mutex);
+        *recv_args->confirmed = 1;
+        pthread_cond_signal(recv_args->confirmation_arrived);
+        pthread_mutex_unlock(recv_args->mutex);
+      }
     } else if (msg.id_msg == ERROR) {
       printf("%s\n", msg.message);
+      
+      if (strcmp(msg.message, "Receiver not found") == 0) {
+        pthread_mutex_lock(recv_args->mutex);
+        pthread_cond_signal(recv_args->confirmation_arrived);
+        pthread_mutex_unlock(recv_args->mutex);
+      }
     }
   }
 
@@ -324,14 +346,21 @@ int main(int argc, const char* argv[]) {
 
   pthread_mutex_t mutex;
   pthread_mutex_init(&mutex, NULL);
+  pthread_cond_t confirmation_arrived;
+  pthread_cond_init(&confirmation_arrived, NULL);
+
+  int confirmed;
 
   pthread_t input_thread;
-  thread_args input_args = {
-      .socket = sock, .my_id = my_id, .user_list = user_list, .mutex = &mutex};
+  thread_args input_args = {.socket = sock,
+                            .my_id = my_id,
+                            .user_list = user_list,
+                            .confirmed = &confirmed,
+                            .confirmation_arrived = &confirmation_arrived,
+                            .mutex = &mutex};
 
   pthread_t recv_thread;
-  thread_args recv_args = {
-      .socket = sock, .my_id = my_id, .user_list = user_list, .mutex = &mutex};
+  thread_args recv_args = input_args;
 
   pthread_create(&input_thread, NULL, handle_input, &input_args);
   pthread_create(&recv_thread, NULL, handle_recv, &recv_args);

@@ -234,14 +234,21 @@ void* client_thread(void* args) {
           memset(buffer, 0, strlen(buffer));
           encode(&msg, buffer);
 
-          // Envia a mensagem novamente para o remetente como forma de confirmação
-          if (send_msg(cdata->client_sock, buffer) != 0) {
+          // Envia a mensagem para o destinatário
+          if (send_msg(active_sockets[msg.id_receiver], buffer) != 0) {
             pthread_mutex_unlock(cdata->mutex); // UNLOCK
             log_exit("recv");
           }
 
-          // Envia a mensagem para o destinatário
-          if (send_msg(active_sockets[msg.id_receiver], buffer) != 0) {
+          msg_t confirm = {.id_msg = OK, .id_sender = NULL_ID, .id_receiver = msg.id_sender};
+          memset(confirm.message, 0, BUFFER_SIZE);
+          strcpy(confirm.message, "ACK");
+
+          memset(buffer, 0, strlen(buffer));
+          encode(&confirm, buffer);
+
+          // Envia a mensagem de confirmação para o remetente
+          if (send_msg(cdata->client_sock, buffer) != 0) {
             pthread_mutex_unlock(cdata->mutex); // UNLOCK
             log_exit("recv");
           }
