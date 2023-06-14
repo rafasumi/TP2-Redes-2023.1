@@ -6,6 +6,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <time.h>
 
 int encode(const msg_t* msg, char* outBuf) {
   return sprintf(outBuf, "%d%c%d%c%d%c%s", msg->id_msg, SEPARATOR, msg->id_receiver, SEPARATOR,
@@ -23,6 +24,12 @@ int is_number(const char* str, size_t len) {
   }
 
   return 1;
+}
+
+void set_time_str(char* time_str) {
+  time_t now = time(NULL);
+  struct tm* local_time = localtime(&now);
+  strftime(time_str, sizeof(time_str) + 1, "[%H:%M]", local_time);
 }
 
 int decode(msg_t* msg, char* inBuf) {

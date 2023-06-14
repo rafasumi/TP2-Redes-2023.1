@@ -7,7 +7,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
 
 typedef struct thread_args {
@@ -120,12 +119,6 @@ void res_list(int socket, int* user_list) {
   }
 
   set_user_list(user_list, msg.message);
-}
-
-void set_time_str(char* time_str) {
-  time_t now = time(NULL);
-  struct tm* local_time = localtime(&now);
-  strftime(time_str, sizeof(time_str) + 1, "[%H:%M]", local_time);
 }
 
 void* handle_input(void* args) {
@@ -299,7 +292,7 @@ void* handle_recv(void* args) {
       }
     } else if (msg.id_msg == ERROR) {
       printf("%s\n", msg.message);
-      
+
       if (strcmp(msg.message, "Receiver not found") == 0) {
         pthread_mutex_lock(recv_args->mutex);
         pthread_cond_signal(recv_args->confirmation_arrived);

@@ -28,6 +28,8 @@ typedef struct msg_t {
 
 int is_number(const char* str, size_t len);
 
+void set_time_str(char* time_str);
+
 int encode(const msg_t* msg, char* outBuf);
 int decode(msg_t* msg, char* inBuf);
 
