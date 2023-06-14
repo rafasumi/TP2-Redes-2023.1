@@ -154,9 +154,9 @@ void* handle_input(void* args) {
 
       break;
     } else if (strcmp(input, "list users") == 0) {
-      pthread_mutex_lock(input_args->mutex); // LOCK
+      pthread_mutex_lock(input_args->mutex);
       list_users(input_args->user_list, input_args->my_id);
-      pthread_mutex_unlock(input_args->mutex); // UNLOCK
+      pthread_mutex_unlock(input_args->mutex);
     }
     // A função strstr encontra a primeira ocorrência de um padrão em uma
     // string. Caso o padrão "send to " for encontrado, então o resto da string
@@ -262,23 +262,31 @@ void* handle_recv(void* args) {
       recv_args->user_list[msg.id_sender] = 0;
       pthread_mutex_unlock(recv_args->mutex);
     } else if (msg.id_msg == MSG) {
-      char time_str[7];
-      set_time_str(time_str);
+      // Esse acesso à lista de usuário não precisa de exclusão mútua, já que
+      // a lista só pode ser alterada pela thread atual.
+      if (recv_args->user_list[msg.id_sender] == 1) {
+        char time_str[7];
+        set_time_str(time_str);
 
-      if (msg.id_receiver != NULL_ID) {
-        printf("P ");
+        if (msg.id_receiver != NULL_ID) {
+          printf("P ");
+        }
+
+        printf("%s", time_str);
+
+        if (msg.id_sender != recv_args->my_id)
+          printf(" %d:", msg.id_sender);
+
+        printf(" %s\n", msg.message);
+      } else {
+        // É a primeira mensagem recebida do usuário, portanto não deve ser
+        // impressa com o timestamp.
+        printf("%s\n", msg.message);
+
+        pthread_mutex_lock(recv_args->mutex);
+        recv_args->user_list[msg.id_sender] = 1;
+        pthread_mutex_unlock(recv_args->mutex);
       }
-
-      printf("%s", time_str);
-
-      if (msg.id_sender != recv_args->my_id)
-        printf(" %d:", msg.id_sender);
-
-      printf(" %s\n", msg.message);
-
-      pthread_mutex_lock(recv_args->mutex);
-      recv_args->user_list[msg.id_sender] = 1;
-      pthread_mutex_unlock(recv_args->mutex);
     } else if (msg.id_msg == OK) {
       if (strcmp(msg.message, "Removed Successfully") == 0) {
         printf("%s\n", msg.message);

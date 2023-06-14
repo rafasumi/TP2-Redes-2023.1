@@ -153,10 +153,10 @@ void* client_thread(void* args) {
       msg_t ret_msg;
       memset(ret_msg.message, 0, BUFFER_SIZE);
 
-      pthread_mutex_lock(cdata->mutex); // LOCK
+      pthread_mutex_lock(cdata->mutex);
 
       if (user_count == 15) {
-        pthread_mutex_unlock(cdata->mutex); // UNLOCK
+        pthread_mutex_unlock(cdata->mutex);
         // id_receiver precisa ser nulo nesse caso, pois o usuário não possui um ID
         error_msg(cdata->client_sock, NULL_ID, 1);
         break;
@@ -168,13 +168,13 @@ void* client_thread(void* args) {
       ret_msg.id_msg = MSG;
       ret_msg.id_sender = new_id;
       ret_msg.id_receiver = NULL_ID;
-      sprintf(ret_msg.message, "User %d joined the group", new_id);
+      sprintf(ret_msg.message, "User %d joined the group!", new_id);
       broadcast(&ret_msg, NULL_ID);
 
       memset(ret_msg.message, 0, strlen(ret_msg.message));
       get_user_list(ret_msg.message);
 
-      pthread_mutex_unlock(cdata->mutex); // UNLOCK
+      pthread_mutex_unlock(cdata->mutex);
 
       ret_msg.id_msg = RES_LIST;
       ret_msg.id_sender = NULL_ID;
@@ -187,7 +187,7 @@ void* client_thread(void* args) {
         log_exit("send");
       }
     } else if (msg.id_msg == REQ_REM) {
-      pthread_mutex_lock(cdata->mutex); // LOCK
+      pthread_mutex_lock(cdata->mutex);
 
       if (active_sockets[msg.id_sender] == -1) {
         error_msg(cdata->client_sock, msg.id_sender, 2);
@@ -201,7 +201,7 @@ void* client_thread(void* args) {
         broadcast(&msg, NULL_ID);
       }
 
-      pthread_mutex_unlock(cdata->mutex); // UNLOCK
+      pthread_mutex_unlock(cdata->mutex);
 
       break;
     } else if (msg.id_msg == MSG) {
@@ -224,7 +224,10 @@ void* client_thread(void* args) {
           log_exit("recv");
         }
       } else { // Mensagem privada
-        pthread_mutex_lock(cdata->mutex); // LOCK
+        // Todo o tratamento da mensagem privada é feio em exclusão mútua para
+        // garantir que o receptor não possa ser marcado como inativo enquanto
+        // o tratamento é feito.
+        pthread_mutex_lock(cdata->mutex);
 
         // Verifica se o ID do destinatário existe
         if (msg.id_receiver >= MAX_CLIENTS || msg.id_receiver < 0 || active_sockets[msg.id_receiver] == -1) {
@@ -236,7 +239,7 @@ void* client_thread(void* args) {
 
           // Envia a mensagem para o destinatário
           if (send_msg(active_sockets[msg.id_receiver], buffer) != 0) {
-            pthread_mutex_unlock(cdata->mutex); // UNLOCK
+            pthread_mutex_unlock(cdata->mutex);
             log_exit("recv");
           }
 
@@ -249,12 +252,12 @@ void* client_thread(void* args) {
 
           // Envia a mensagem de confirmação para o remetente
           if (send_msg(cdata->client_sock, buffer) != 0) {
-            pthread_mutex_unlock(cdata->mutex); // UNLOCK
+            pthread_mutex_unlock(cdata->mutex);
             log_exit("recv");
           }
         }
 
-        pthread_mutex_unlock(cdata->mutex); // UNLOCK
+        pthread_mutex_unlock(cdata->mutex);
       }
     } else {
       eprintf("Unknown message ID.");
