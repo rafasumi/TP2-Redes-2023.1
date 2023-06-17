@@ -1,17 +1,13 @@
 #include "common.h"
 #include <arpa/inet.h>
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
-
-int encode(const msg_t* msg, char* outBuf) {
-  return sprintf(outBuf, "%d%c%d%c%d%c%s", msg->id_msg, SEPARATOR, msg->id_receiver, SEPARATOR,
-                 msg->id_sender, SEPARATOR, msg->message);
-}
 
 int is_number(const char* str, size_t len) {
   if (!isdigit(str[0]) && (str[0] != '-' || len == 1)) {
@@ -32,6 +28,11 @@ void set_time_str(char* time_str) {
   strftime(time_str, sizeof(time_str) + 1, "[%H:%M]", local_time);
 }
 
+int encode(const msg_t* msg, char* outBuf) {
+  return sprintf(outBuf, "%d%c%d%c%d%c%s", msg->id_msg, SEPARATOR, msg->id_receiver, SEPARATOR,
+                 msg->id_sender, SEPARATOR, msg->message);
+}
+
 int decode(msg_t* msg, char* inBuf) {
   char* token;
   char delim[1] = {SEPARATOR};
@@ -41,6 +42,8 @@ int decode(msg_t* msg, char* inBuf) {
   if (token == NULL)
     return 0;
 
+  // Certifica que o ID da mensagem é um número inteiro válido antes de fazer a
+  // conversão.
   if (!is_number(token, strlen(token)))
     return 0;
   msg->id_msg = atoi(token);
@@ -50,6 +53,8 @@ int decode(msg_t* msg, char* inBuf) {
   if (token == NULL)
     return 0;
 
+  // Certifica que o ID do remetente é um número inteiro válido antes de fazer a
+  // conversão.
   if (!is_number(token, strlen(token)))
     return 0;
   msg->id_receiver = atoi(token);
@@ -59,6 +64,8 @@ int decode(msg_t* msg, char* inBuf) {
   if (token == NULL)
     return 0;
 
+  // Certifica que o ID do destinatário é um número inteiro válido antes de
+  // fazer a conversão.
   if (!is_number(token, strlen(token)))
     return 0;
   msg->id_sender = atoi(token);
@@ -76,12 +83,16 @@ int decode(msg_t* msg, char* inBuf) {
 
 int send_msg(int socket, const char* buffer) {
   size_t buffer_len = strlen(buffer);
+  // Faz a conversão para a representação de rede
   uint16_t msg_size = htons(buffer_len);
 
+  // Envia um inteiro positivo de 16 bits para informar o tamanho da mensagem
+  // que será enviada
   if (send(socket, &msg_size, sizeof(uint16_t), 0) != sizeof(uint16_t)) {
     return -1;
   }
 
+  // Envia a mensagem de fato
   if (send(socket, buffer, buffer_len, 0) != buffer_len) {
     return -1;
   }
@@ -93,6 +104,8 @@ size_t recv_msg(int socket, char* buffer) {
   size_t header_size = sizeof(uint16_t);
   char header_buffer[sizeof(uint16_t)];
 
+  // Primeiro, recebe o "cabeçalho" que tem exatamente 16 bits e informa o
+  // tamanho do conteúdo da mensagem
   char* ptr = header_buffer;
   size_t count;
   while (header_size > 0) {
@@ -107,8 +120,10 @@ size_t recv_msg(int socket, char* buffer) {
 
   uint16_t msg_size;
   memcpy(&msg_size, header_buffer, sizeof(uint16_t));
+  // Faz a conversão para a representação da máquina
   msg_size = ntohs(msg_size);
 
+  // Após determinar o tamanho da mensagem, recebe o conteúdo da mensagem
   ptr = buffer;
   while (msg_size > 0) {
     count = recv(socket, ptr, msg_size, 0);
@@ -121,11 +136,6 @@ size_t recv_msg(int socket, char* buffer) {
   }
 
   return 1;
-}
-
-void print_msg(const msg_t* msg) {
-  printf("ID: %d\nSENDER: %d\nRECEIVER: %d\nMESSAGE: %s\n", msg->id_msg, msg->id_sender,
-         msg->id_receiver, msg->message);
 }
 
 // Retirado das aulas do professor Ítalo.
