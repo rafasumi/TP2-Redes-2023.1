@@ -156,8 +156,8 @@ void* handle_input(void* args) {
       memset(message, 0, BUFFER_SIZE);
 
       // O ID do destinatário é a primeira string após "send to ", enquanto a
-      // mensagem é o resto da string
-      sscanf(ptr, "%s %[^\n]", id_receiver, message);
+      // mensagem é o resto da string que está entre aspas
+      sscanf(ptr, "%s \"%[^\"]\"", id_receiver, message);
 
       // Trata o caso em que não há nada após o ID do destinatário
       if (message[0] == '\0')
@@ -206,9 +206,16 @@ void* handle_input(void* args) {
       if (*ptr == '\0')
         continue;
 
+      char message[BUFFER_SIZE];
+      memset(message, 0, BUFFER_SIZE);
+      sscanf(ptr, "\"%[^\"]\"", message);
+
+      if (message[0] == '\0')
+        continue;
+
       msg_t msg = {.id_msg = MSG, .id_sender = input_args->my_id, .id_receiver = NULL_ID};
       memset(msg.message, 0, BUFFER_SIZE);
-      strcpy(msg.message, ptr);
+      strcpy(msg.message, message);
 
       char buffer[BUFFER_SIZE];
       memset(buffer, 0, BUFFER_SIZE);
