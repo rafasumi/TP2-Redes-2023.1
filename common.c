@@ -89,11 +89,15 @@ int send_msg(int socket, const char* buffer) {
   // Envia um inteiro positivo de 16 bits para informar o tamanho da mensagem
   // que será enviada
   if (send(socket, &msg_size, sizeof(uint16_t), 0) != sizeof(uint16_t)) {
+    // Assume que o envio foi mal-sucedido caso o número de bytes enviados não
+    // seja igual ao que se desejava enviar
     return -1;
   }
 
   // Envia a mensagem de fato
   if (send(socket, buffer, buffer_len, 0) != buffer_len) {
+    // Assume que o envio foi mal-sucedido caso o número de bytes enviados não
+    // seja igual ao que se desejava enviar
     return -1;
   }
 
@@ -104,8 +108,8 @@ size_t recv_msg(int socket, char* buffer) {
   size_t header_size = sizeof(uint16_t);
   char header_buffer[sizeof(uint16_t)];
 
-  // Primeiro, recebe o "cabeçalho" que tem exatamente 16 bits e informa o
-  // tamanho do conteúdo da mensagem
+  // Primeiro, recebe o "cabeçalho" que e informa o tamanho do conteúdo da
+  // mensagem e tem exatamente 16 bits
   char* ptr = header_buffer;
   size_t count;
   while (header_size > 0) {
@@ -138,7 +142,6 @@ size_t recv_msg(int socket, char* buffer) {
   return 1;
 }
 
-// Retirado das aulas do professor Ítalo.
 void log_exit(const char* msg) {
   perror(msg);
   exit(EXIT_FAILURE);

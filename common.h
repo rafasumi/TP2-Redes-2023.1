@@ -26,10 +26,10 @@ typedef struct msg_t {
   unsigned int id_msg;
 
   // ID do remetente
-  unsigned int id_sender;
+  int id_sender;
 
   // ID do destinatário
-  unsigned int id_receiver;
+  int id_receiver;
 
   // Contéudo da mensagem
   char message[BUFFER_SIZE];
@@ -61,7 +61,11 @@ int send_msg(int socket, const char* buffer);
 // o envio tenha sido bem sucedido.
 size_t recv_msg(int socket, char* buffer);
 
+// Retirado das aulas do professor Ítalo.
 void log_exit(const char* msg);
+
+// Função usada para reportar um erro de parsing e depois finalizar a execução
+// do programa.
 void parse_error();
 
 #endif

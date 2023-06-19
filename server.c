@@ -104,10 +104,18 @@ void error_msg(int socket, int id_receiver, int error_code) {
 
 // Envia uma mensagem do tipo OK no socket "socket", para o destinatário de ID
 // "id_receiver".
-void ok_msg(int socket, int id_receiver, const char* message) {
+void ok_msg(int socket, int id_receiver, int ok_code) {
   msg_t msg = {.id_msg = OK, .id_sender = NULL_ID, .id_receiver = id_receiver};
+
   memset(msg.message, 0, BUFFER_SIZE);
-  strcpy(msg.message, message);
+  switch (ok_code) {
+  case 1:
+    strcpy(msg.message, "Removed Successfully");
+    break;
+  case 2:
+    strcpy(msg.message, "OK");
+    break;
+  }
 
   char buffer[BUFFER_SIZE];
   memset(buffer, 0, BUFFER_SIZE);
@@ -151,6 +159,7 @@ void* client_thread(void* args) {
         break;
       }
 
+      // Define um identificador para o usuário
       int new_id = get_id(cdata->client_sock);
       printf("User %d added\n", new_id);
 
@@ -165,6 +174,8 @@ void* client_thread(void* args) {
       sprintf(ret_msg.message, "User %d joined the group!", new_id);
       broadcast(&ret_msg, NULL_ID);
 
+      // Aloca uma string que representa a lista de integrantes do grupo para o
+      // conteúdo da mensagem
       memset(ret_msg.message, 0, strlen(ret_msg.message));
       get_user_list(ret_msg.message);
 
@@ -192,11 +203,12 @@ void* client_thread(void* args) {
       if (active_sockets[msg.id_sender] == -1) {
         error_msg(cdata->client_sock, msg.id_sender, 2);
       } else {
-        ok_msg(cdata->client_sock, msg.id_sender, "Removed Successfully");
+        printf("User %d removed\n", msg.id_sender);
+
+        // Envia mensagem de confirmação para o usuário
+        ok_msg(cdata->client_sock, msg.id_sender, 1);
         active_sockets[msg.id_sender] = -1;
         user_count--;
-
-        printf("User %d removed\n", msg.id_sender);
 
         broadcast(&msg, NULL_ID);
       }
@@ -230,8 +242,8 @@ void* client_thread(void* args) {
         }
       } else { // Mensagem privada
         // Todo o tratamento da mensagem privada é feio em exclusão mútua para
-        // garantir que o receptor não possa ser marcado como inativo enquanto
-        // o tratamento é feito
+        // garantir que o destinatário não possa ser marcado como inativo por
+        // outra thread enquanto o tratamento é feito aqui
         pthread_mutex_lock(cdata->mutex);
 
         // Verifica se o ID do destinatário existe
@@ -249,7 +261,7 @@ void* client_thread(void* args) {
           }
 
           // Envia a mensagem de confirmação para o remetente
-          ok_msg(cdata->client_sock, msg.id_sender, "ACK");
+          ok_msg(cdata->client_sock, msg.id_sender, 2);
         }
 
         pthread_mutex_unlock(cdata->mutex);

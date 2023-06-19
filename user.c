@@ -100,6 +100,7 @@ void res_list(int socket, int* user_list) {
     parse_error();
   }
 
+  // Atualiza a lista de usuários conhecidos
   set_user_list(user_list, msg.message);
 }
 
@@ -132,7 +133,7 @@ void* handle_input(void* args) {
         log_exit("send");
       }
 
-      // Finaliza o loop
+      // Finaliza o loop e a thread para de executar
       break;
     } else if (strcmp(input, "list users") == 0) {
       pthread_mutex_lock(input_args->mutex);
@@ -165,7 +166,8 @@ void* handle_input(void* args) {
 
       // Não envia mensagem para o servidor caso ID não seja um número válido ou
       // se for igual a -1 (NULL_ID). Isso é feito para evitar ambiguidades no
-      // servidor
+      // servidor, já que um receptor igual a NULL_ID representa uma mensagem de
+      // broadcast
       if (!is_number(id_receiver, strlen(id_receiver)) || strcmp(id_receiver, "-1") == 0) {
         printf("Receiver not found\n");
         continue;
@@ -253,7 +255,7 @@ void* handle_recv(void* args) {
     if (msg.id_msg == REQ_REM) {
       printf("User %d left the group!\n", msg.id_sender);
 
-      // Marca o usuário como inativo na lista de usuários
+      // Marca o usuário remetente como inativo na lista de usuários
       pthread_mutex_lock(recv_args->mutex);
       recv_args->user_list[msg.id_sender] = 0;
       pthread_mutex_unlock(recv_args->mutex);
@@ -265,6 +267,7 @@ void* handle_recv(void* args) {
         char time_str[7];
         set_time_str(time_str);
 
+        // Imprime "P" se não for uma mensagem de broadcast
         if (msg.id_receiver != NULL_ID) {
           printf("P ");
         }
@@ -281,6 +284,7 @@ void* handle_recv(void* args) {
 
         printf("%s\n", msg.message);
 
+        // Marca o usuário remetente como ativo na lista de usuários
         pthread_mutex_lock(recv_args->mutex);
         recv_args->user_list[msg.id_sender] = 1;
         pthread_mutex_unlock(recv_args->mutex);
@@ -288,6 +292,9 @@ void* handle_recv(void* args) {
     } else if (msg.id_msg == OK) {
       if (strcmp(msg.message, "Removed Successfully") == 0) {
         printf("%s\n", msg.message);
+
+        // Após receber essa confirmação, o loop pode ser finalizado e a thread
+        // pode parar de executar
         break;
       } else {
         // Caso o conteúdo da mensagem seja diferente de "Removed Successfully",
