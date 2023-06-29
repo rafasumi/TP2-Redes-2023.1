@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 // Struct que é usado para a passagem de argumentos às threads
-typedef struct thread_args {
+typedef struct user_thread_args {
   // Socket da conexão com o servidor.
   int socket;
 
@@ -30,7 +30,7 @@ typedef struct thread_args {
 
   // Variável que indica se a confirmação recebida foi positiva ou negativa
   int* confirmed;
-} thread_args;
+} user_thread_args;
 
 // Atualiza o array "user_list" para ter os usuários passados na lista da
 // mensagem do tipo RES_LIST
@@ -45,8 +45,8 @@ void set_user_list(int* user_list, char* message) {
 }
 
 // Imprime os usuários presentes na lista "user_list", mas ignora o ID "my_id".
-// Precisa ser feito em exclusão mútua, para evitar condições de corrida no 
-// acesso à variável "user_list" 
+// Precisa ser feito em exclusão mútua, para evitar condições de corrida no
+// acesso à variável "user_list"
 void list_users(const int* user_list, int my_id) {
   for (int i = 0; i < MAX_CLIENTS; i++) {
     if (user_list[i] != 0 && i != my_id) {
@@ -107,7 +107,7 @@ void res_list(int socket, int* user_list) {
 // Função a ser executada pela thread responsável pela leitura de comandos na
 // entrada padrão e pelo envio de mensagens.
 void* handle_input(void* args) {
-  thread_args* input_args = (thread_args*)args;
+  user_thread_args* input_args = (user_thread_args*)args;
 
   // Lê continuamente da entrada padrão
   while (1) {
@@ -238,7 +238,7 @@ void* handle_input(void* args) {
 
 // Função a ser executada pela thread responsável pelo recebimento de mensagens.
 void* handle_recv(void* args) {
-  thread_args* recv_args = (thread_args*)args;
+  user_thread_args* recv_args = (user_thread_args*)args;
 
   char buffer[BUFFER_SIZE];
   msg_t msg;
@@ -412,7 +412,7 @@ int main(int argc, const char* argv[]) {
   res_list(sock, user_list);
 
   pthread_mutex_t mutex;
-  pthread_mutex_init(&mutex, NULL);  
+  pthread_mutex_init(&mutex, NULL);
   pthread_cond_t confirmation_arrived;
   pthread_cond_init(&confirmation_arrived, NULL);
 
@@ -421,17 +421,17 @@ int main(int argc, const char* argv[]) {
   // Variáveis para a thread que faz leitura da entrada padrão e o envio de
   // mensagens
   pthread_t input_thread;
-  thread_args input_args = {.socket = sock,
-                            .my_id = my_id,
-                            .user_list = user_list,
-                            .confirmed = &confirmed,
-                            .confirmation_arrived = &confirmation_arrived,
-                            .mutex = &mutex};
+  user_thread_args input_args = {.socket = sock,
+                                 .my_id = my_id,
+                                 .user_list = user_list,
+                                 .confirmed = &confirmed,
+                                 .confirmation_arrived = &confirmation_arrived,
+                                 .mutex = &mutex};
 
   // Variáveis para a thread que faz o recebimento das mensagens enviadas pelo
   // servidor
   pthread_t recv_thread;
-  thread_args recv_args = input_args;
+  user_thread_args recv_args = input_args;
 
   // Cria as threads
   pthread_create(&input_thread, NULL, handle_input, &input_args);

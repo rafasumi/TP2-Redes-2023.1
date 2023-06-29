@@ -17,13 +17,13 @@ unsigned int user_count = 0;
 
 // Struct que é usado para a passagem de argumentos às threads que fazem o
 // processamento de cada cliente.
-typedef struct thread_args {
+typedef struct server_thread_args {
   // Socket do cliente processado pela thread.
   int client_sock;
 
   // Trava mutex a ser usada pelas threads.
   pthread_mutex_t* mutex;
-} thread_args;
+} server_thread_args;
 
 // Função auxiliar para obter um novo ID para um cliente. Basicamente, pega a
 // primeira posição do array "active_sockets" que é igual a -1. Essa função
@@ -59,6 +59,9 @@ void get_user_list(char* buffer) {
   buffer[strlen(buffer) - 1] = '\0';
 }
 
+// Função usada para enviar mensagem pública a todos os usuários ativos no
+// momento. O usuário de ID "skip_id" é ignorado, o que pode ser útil, por
+// exemplo, para enviar uma versão alterada da mensagem para ele.
 void broadcast(msg_t* msg, int skip_id) {
   char buffer[BUFFER_SIZE];
   memset(buffer, 0, BUFFER_SIZE);
@@ -129,7 +132,7 @@ void ok_msg(int socket, int id_receiver, int ok_code) {
 // Função a ser executada pelas threads que realizam o processamento de cada
 // cliente.
 void* client_thread(void* args) {
-  thread_args* cdata = (thread_args*)args;
+  server_thread_args* cdata = (server_thread_args*)args;
 
   msg_t msg;
   char buffer[BUFFER_SIZE];
@@ -364,7 +367,7 @@ int main(int argc, const char* argv[]) {
 
     // Quando uma nova conexão é aceita, é criada uma nova thread para realizar
     // o processamento das mensagens associadas ao cliente dessa conexão
-    thread_args* cdata = (thread_args*)malloc(sizeof(thread_args));
+    server_thread_args* cdata = (server_thread_args*)malloc(sizeof(server_thread_args));
     cdata->client_sock = client_sock;
     cdata->mutex = &mutex;
 
